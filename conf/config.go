@@ -13,10 +13,20 @@ import (
 )
 
 type ConfigType struct {
-	Proxy    string     `yaml:"proxy"`
-	Username string     `yaml:"username"`
-	Password string     `yaml:"password"`
-	Open     OpenConfig `yaml:"open"`
+	Proxy    string      `yaml:"proxy"`
+	Username string      `yaml:"username"`
+	Password string      `yaml:"password"`
+	Aria2    Aria2Config `yaml:"aria2"`
+	Open     OpenConfig  `yaml:"open"`
+}
+
+type Aria2Config struct {
+	RPCUrl         string `yaml:"rpc_url"`
+	Secret         string `yaml:"secret"`
+	MaxConnections int    `yaml:"max_connections"`
+	Split          int    `yaml:"split"`
+	MinSplitSize   string `yaml:"min_split_size"`
+	DownloadDir    string `yaml:"download_dir"`
 }
 
 type OpenConfig struct {
@@ -31,20 +41,50 @@ type OpenConfig struct {
 
 var Config ConfigType
 
-// UseProxy returns whether the proxy is used
 func (c *ConfigType) UseProxy() bool {
 	return len(c.Proxy) != 0
 }
 
-// Initializing configuration information
+func (c *Aria2Config) GetRPCUrl() string {
+	if c.RPCUrl == "" {
+		return "http://127.0.0.1:6800/jsonrpc"
+	}
+	return c.RPCUrl
+}
+
+func (c *Aria2Config) GetMaxConnections() int {
+	if c.MaxConnections <= 0 {
+		return 16
+	}
+	return c.MaxConnections
+}
+
+func (c *Aria2Config) GetSplit() int {
+	if c.Split <= 0 {
+		return 16
+	}
+	return c.Split
+}
+
+func (c *Aria2Config) GetMinSplitSize() string {
+	if c.MinSplitSize == "" {
+		return "1M"
+	}
+	return c.MinSplitSize
+}
+
+func (c *Aria2Config) GetDownloadDir() string {
+	if c.DownloadDir == "" {
+		return "."
+	}
+	return c.DownloadDir
+}
+
 func InitConfig(path string) error {
-	// Firstly, read the config info from executable file
 	if readFromBinary() == nil {
 		return nil
 	}
 
-	// Secondly, it reads config.yml from the given path.
-	// If there is no config.yml in the given path, it reads it from the default config path.
 	_, err := os.Stat(path)
 	switch os.IsNotExist(err) {
 	case true:
@@ -57,21 +97,12 @@ func InitConfig(path string) error {
 		}
 	}
 
-	// Not empty
-	// Must contains '://'
 	if len(Config.Proxy) != 0 && !strings.Contains(Config.Proxy, "://") {
 		return fmt.Errorf("proxy should contains ://")
 	}
 	return nil
 }
 
-// Read config from binary in the end
-// config_bytes: n bytes
-// end_magic: 10 bytes
-// size: 4 bytes
-// -----------------------------------
-// | config_bytes | size | end_magic |
-// -----------------------------------
 func readFromBinary() error {
 	f, err := os.Open(os.Args[0])
 	if err != nil {
@@ -93,9 +124,8 @@ func readFromBinary() error {
 		return fmt.Errorf("read end_magic err: %d", n)
 	}
 
-	// Not have `config.yml` in the end
 	if !bytes.Equal(end_magic, []byte("config.yml")) {
-		return fmt.Errorf("not a pikpakcli binary")
+		return fmt.Errorf("not a pikpakidm binary")
 	}
 
 	var size = make([]byte, 4)
@@ -122,16 +152,13 @@ func readFromBinary() error {
 		return fmt.Errorf("read config size err: %d", n)
 	}
 
-	// Unmarshal config
 	return yaml.Unmarshal(configBuf, &Config)
 }
 
-// Read configuration file from the given path
 func readFromPath(path string) error {
 	return readConfig(path)
 }
 
-// Read configuration file from config path
 func readFromConfigDir() error {
 	path, err := DefaultConfigPath()
 	if err != nil {
@@ -140,13 +167,12 @@ func readFromConfigDir() error {
 	return readConfig(path)
 }
 
-// DefaultConfigPath returns the default user config file path.
 func DefaultConfigPath() (string, error) {
 	configDir, err := os.UserConfigDir()
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(configDir, "pikpakcli", "config.yml"), nil
+	return filepath.Join(configDir, "pikpakidm", "config.yml"), nil
 }
 
 func readConfig(path string) error {

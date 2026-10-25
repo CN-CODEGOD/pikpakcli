@@ -112,10 +112,10 @@ func openCacheRoot() (string, error) {
 
 	cacheDir, err := os.UserCacheDir()
 	if err != nil {
-		cacheDir = filepath.Join(os.TempDir(), "pikpakcli")
+		cacheDir = filepath.Join(os.TempDir(), "pikpakidm")
 	}
 
-	root := filepath.Join(cacheDir, "pikpakcli", "open")
+	root := filepath.Join(cacheDir, "pikpakidm", "open")
 	if err := utils.CreateDirIfNotExist(root); err != nil {
 		return "", err
 	}

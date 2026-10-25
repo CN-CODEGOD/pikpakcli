@@ -15,7 +15,7 @@ var logger = slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
 
 func Init(debug bool, topics []string) {
 	enabledTopics = parseTopics(topics)
-	debugEnabled = debug || envEnabled("PIKPAKCLI_DEBUG") || len(enabledTopics) > 0
+	debugEnabled = debug || envEnabled("PIKPAKIDM_DEBUG") || len(enabledTopics) > 0
 
 	level := slog.LevelError
 	if debugEnabled {
@@ -84,7 +84,7 @@ func parseTopics(topics []string) map[string]struct{} {
 			res[item] = struct{}{}
 		}
 	}
-	envTopics := strings.Split(os.Getenv("PIKPAKCLI_DEBUG_TOPICS"), ",")
+	envTopics := strings.Split(os.Getenv("PIKPAKIDM_DEBUG_TOPICS"), ",")
 	for _, item := range envTopics {
 		item = strings.TrimSpace(strings.ToLower(item))
 		if item == "" {
@@ -92,7 +92,7 @@ func parseTopics(topics []string) map[string]struct{} {
 		}
 		res[item] = struct{}{}
 	}
-	if envEnabled("PIKPAKCLI_DEBUG") {
+	if envEnabled("PIKPAKIDM_DEBUG") {
 		res["all"] = struct{}{}
 	}
 	return res

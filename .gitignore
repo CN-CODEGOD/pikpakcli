@@ -1,9 +1,4 @@
-
-.vscode
-.pikpaksync.txt
+pikpakidm
+*.exe
 config.yml
-pikpakcli
-dist
-dist/
-pikpakcli-test
-pktest
+*.pikpakidmdownload

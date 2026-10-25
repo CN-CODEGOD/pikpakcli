@@ -93,5 +93,5 @@ func sessionFile(account string) (string, error) {
 	}
 	hash := md5.Sum([]byte(account))
 	filename := fmt.Sprintf("session_%s.json", hex.EncodeToString(hash[:]))
-	return filepath.Join(configDir, "pikpakcli", filename), nil
+	return filepath.Join(configDir, "pikpakidm", filename), nil
 }

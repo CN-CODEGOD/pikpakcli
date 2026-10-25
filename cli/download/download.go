@@ -10,6 +10,7 @@ import (
 
 	"github.com/52funny/pikpakcli/conf"
 	"github.com/52funny/pikpakcli/internal/api"
+	"github.com/52funny/pikpakcli/internal/aria2"
 	"github.com/52funny/pikpakcli/internal/logx"
 	"github.com/52funny/pikpakcli/internal/utils"
 	"github.com/spf13/cobra"
@@ -20,7 +21,7 @@ import (
 var DownloadCmd = &cobra.Command{
 	Use:     "download",
 	Aliases: []string{"d"},
-	Short:   `Download file from pikpak server`,
+	Short:   `Download files from PikPak (supports aria2)`,
 	Run: func(cmd *cobra.Command, args []string) {
 		if len(args) == 0 {
 			cmd.Help()
@@ -43,33 +44,18 @@ var DownloadCmd = &cobra.Command{
 	},
 }
 
-// Number of simultaneous downloads
-//
-// default 1
 var count int
-
-// Specifies the folder of the pikpak server
-//
-// default server root directory (.)
 var folder string
-
-// parent path id
 var parentId string
-
-// Output directory
-//
-// default current directory (.)
 var output string
-
-// Progress bar
-//
-// default false
 var progress bool
-
-// Time range
-//
-// default empty, download the whole file
 var timeRangeSpec string
+var useAria2 bool
+var disableAria2 bool
+var aria2RPCUrl string
+var aria2Secret string
+var aria2Dir string
+var exportAria2Input string
 
 var clipper timeClipper = ffmpegClipper{}
 
@@ -86,12 +72,18 @@ type warpStat struct {
 const progressNameMaxRunes = 36
 
 func init() {
-	DownloadCmd.Flags().IntVarP(&count, "count", "c", 1, "number of simultaneous downloads")
+	DownloadCmd.Flags().IntVarP(&count, "count", "c", 1, "number of simultaneous downloads (built-in mode)")
 	DownloadCmd.Flags().StringVarP(&output, "output", "o", ".", "output directory")
 	DownloadCmd.Flags().StringVarP(&folder, "path", "p", "/", "specific the base path on the pikpak server")
 	DownloadCmd.Flags().StringVarP(&parentId, "parent-id", "P", "", "the parent path id")
-	DownloadCmd.Flags().BoolVarP(&progress, "progress", "g", false, "show download progress")
-	DownloadCmd.Flags().StringVar(&timeRangeSpec, "time-range", "", "download a time range from a single video file, for example 10-20 or 01:02-01:30")
+	DownloadCmd.Flags().BoolVarP(&progress, "progress", "g", false, "show download progress (built-in mode)")
+	DownloadCmd.Flags().StringVar(&timeRangeSpec, "time-range", "", "download a time range from a single video file (built-in, requires ffmpeg)")
+	DownloadCmd.Flags().BoolVar(&useAria2, "aria2", false, "force use aria2 for downloading")
+	DownloadCmd.Flags().BoolVar(&disableAria2, "no-aria2", false, "disable aria2, use built-in HTTP downloader")
+	DownloadCmd.Flags().StringVar(&aria2RPCUrl, "aria2-rpc-url", "", "aria2 JSON-RPC URL (overrides config)")
+	DownloadCmd.Flags().StringVar(&aria2Secret, "aria2-secret", "", "aria2 RPC secret (overrides config)")
+	DownloadCmd.Flags().StringVar(&aria2Dir, "aria2-dir", "", "aria2 download directory (overrides config)")
+	DownloadCmd.Flags().StringVar(&exportAria2Input, "export-aria2", "", "export aria2 input file instead of downloading")
 }
 
 type downloadTargetResolver interface {
@@ -101,14 +93,24 @@ type downloadTargetResolver interface {
 }
 
 func handleDownload(cmd *cobra.Command, p *api.PikPak, args []string) {
-	if err := utils.CreateDirIfNotExist(output); err != nil {
-		fmt.Println("Create output directory failed")
-		logx.Error(err)
+	if strings.TrimSpace(timeRangeSpec) != "" {
+		downloadTimeRangeTarget(p, args)
 		return
 	}
 
-	if strings.TrimSpace(timeRangeSpec) != "" {
-		downloadTimeRangeTarget(p, args)
+	if exportAria2Input != "" {
+		exportAria2InputFile(p, args)
+		return
+	}
+
+	if shouldUseAria2() {
+		handleAria2Download(p, args)
+		return
+	}
+
+	if err := utils.CreateDirIfNotExist(output); err != nil {
+		fmt.Println("Create output directory failed")
+		logx.Error(err)
 		return
 	}
 
@@ -120,6 +122,52 @@ func handleDownload(cmd *cobra.Command, p *api.PikPak, args []string) {
 	for _, arg := range args {
 		downloadTarget(p, arg)
 	}
+}
+
+func shouldUseAria2() bool {
+	if disableAria2 {
+		return false
+	}
+	if useAria2 {
+		return true
+	}
+	rpcURL := getAria2RPCURL()
+	secret := getAria2Secret()
+	client := aria2.NewClient(rpcURL, secret)
+	_, err := client.GetVersion()
+	if err != nil {
+		logx.Debugln("aria2", "aria2 not available, falling back to built-in downloader:", err)
+		return false
+	}
+	return true
+}
+
+func getAria2RPCURL() string {
+	if aria2RPCUrl != "" {
+		return aria2RPCUrl
+	}
+	return conf.Config.Aria2.GetRPCUrl()
+}
+
+func getAria2Secret() string {
+	if aria2Secret != "" {
+		return aria2Secret
+	}
+	return conf.Config.Aria2.Secret
+}
+
+func getAria2DownloadDir() string {
+	if aria2Dir != "" {
+		return aria2Dir
+	}
+	if conf.Config.Aria2.DownloadDir != "" {
+		return conf.Config.Aria2.DownloadDir
+	}
+	absOutput, err := filepath.Abs(output)
+	if err != nil {
+		return "."
+	}
+	return absOutput
 }
 
 func requiresExplicitOutputFlag(cmd *cobra.Command, args []string) bool {
@@ -134,6 +182,233 @@ func requiresExplicitOutputFlag(cmd *cobra.Command, args []string) bool {
 	}
 	return false
 }
+
+// --- Aria2 download mode ---
+
+func handleAria2Download(p *api.PikPak, args []string) {
+	rpcURL := getAria2RPCURL()
+	secret := getAria2Secret()
+	client := aria2.NewClient(rpcURL, secret)
+
+	version, err := client.GetVersion()
+	if err != nil {
+		fmt.Println("Connect to aria2 failed:", err)
+		logx.Error(err)
+		fmt.Println("Falling back to built-in downloader...")
+		disableAria2 = true
+		handleDownload(nil, p, args)
+		return
+	}
+	fmt.Printf("Connected to aria2 v%s\n", version["version"])
+
+	dlDir := getAria2DownloadDir()
+	var gids []aria2Task
+
+	for _, arg := range args {
+		stat, err := resolveDownloadTarget(p, arg)
+		if err != nil {
+			target := remoteTargetPath(arg)
+			fmt.Println("Resolve download target failed:", target)
+			logx.Error(err)
+			continue
+		}
+
+		if stat.Kind == api.FileKindFolder {
+			folderGids := addFolderToAria2(p, client, stat.ID, stat.Name, dlDir)
+			gids = append(gids, folderGids...)
+		} else {
+			file, err := p.GetFile(stat.ID)
+			if err != nil {
+				fmt.Println("Get file failed:", stat.Name)
+				logx.Error(err)
+				continue
+			}
+			gid := addFileToAria2(client, &file, dlDir, "")
+			if gid != "" {
+				gids = append(gids, aria2Task{gid: gid, name: file.Name})
+			}
+		}
+	}
+
+	if len(gids) == 0 {
+		fmt.Println("No files to download")
+		return
+	}
+
+	fmt.Printf("\nSubmitted %d file(s) to aria2\n", len(gids))
+	fmt.Println("Use 'aria2c --show-files' or web UI to monitor download progress")
+
+	stat, err := client.GetGlobalStat()
+	if err == nil {
+		fmt.Printf("aria2 status: active=%s waiting=%s stopped=%s\n",
+			stat.NumActive, stat.NumWaiting, stat.NumStopped)
+	}
+}
+
+type aria2Task struct {
+	gid  string
+	name string
+}
+
+func addFolderToAria2(p *api.PikPak, client *aria2.Client, folderID, folderName, baseDir string) []aria2Task {
+	var tasks []aria2Task
+	collectStat := make([]warpStat, 0)
+	recursiveCollect(p, &collectStat, folderID, folderName)
+
+	for _, ws := range collectStat {
+		file, err := p.GetFile(ws.s.ID)
+		if err != nil {
+			fmt.Println("Get file failed:", ws.s.Name)
+			logx.Error(err)
+			continue
+		}
+		gid := addFileToAria2(client, &file, baseDir, ws.output)
+		if gid != "" {
+			tasks = append(tasks, aria2Task{gid: gid, name: file.Name})
+		}
+	}
+	return tasks
+}
+
+func addFileToAria2(client *aria2.Client, file *api.File, baseDir, subDir string) string {
+	downloadURL := getDownloadURL(file)
+	if downloadURL == "" {
+		fmt.Println("No download URL for:", file.Name)
+		return ""
+	}
+
+	dir := baseDir
+	if subDir != "" {
+		dir = filepath.Join(baseDir, subDir)
+	}
+
+	options := map[string]interface{}{
+		"dir":               dir,
+		"out":               file.Name,
+		"max-connection-per-server": conf.Config.Aria2.GetMaxConnections(),
+		"split":             conf.Config.Aria2.GetSplit(),
+		"min-split-size":    conf.Config.Aria2.GetMinSplitSize(),
+		"header":            fmt.Sprintf("User-Agent: %s", api.UserAgent),
+	}
+
+	gid, err := client.AddURI([]string{downloadURL}, options)
+	if err != nil {
+		fmt.Println("Add to aria2 failed:", file.Name, "-", err)
+		logx.Error(err)
+		return ""
+	}
+
+	fmt.Printf("[aria2] %s -> %s (GID: %s)\n", file.Name, dir, gid)
+	return gid
+}
+
+func getDownloadURL(file *api.File) string {
+	url := strings.TrimSpace(file.Links.ApplicationOctetStream.URL)
+	if url != "" {
+		return url
+	}
+	for _, media := range file.Medias {
+		if media.IsDefault && media.IsVisible {
+			u := strings.TrimSpace(media.Link.URL)
+			if u != "" {
+				return u
+			}
+		}
+	}
+	for _, media := range file.Medias {
+		if media.IsVisible {
+			u := strings.TrimSpace(media.Link.URL)
+			if u != "" {
+				return u
+			}
+		}
+	}
+	for _, media := range file.Medias {
+		u := strings.TrimSpace(media.Link.URL)
+		if u != "" {
+			return u
+		}
+	}
+	return ""
+}
+
+// --- Export aria2 input file ---
+
+func exportAria2InputFile(p *api.PikPak, args []string) {
+	f, err := os.Create(exportAria2Input)
+	if err != nil {
+		fmt.Println("Create export file failed:", err)
+		logx.Error(err)
+		return
+	}
+	defer f.Close()
+
+	count := 0
+	for _, arg := range args {
+		stat, err := resolveDownloadTarget(p, arg)
+		if err != nil {
+			target := remoteTargetPath(arg)
+			fmt.Println("Resolve download target failed:", target)
+			logx.Error(err)
+			continue
+		}
+
+		if stat.Kind == api.FileKindFolder {
+			n := exportFolderAria2Input(p, f, stat.ID, stat.Name)
+			count += n
+		} else {
+			file, err := p.GetFile(stat.ID)
+			if err != nil {
+				fmt.Println("Get file failed:", stat.Name)
+				logx.Error(err)
+				continue
+			}
+			exportFileAria2Input(f, &file, "")
+			count++
+		}
+	}
+
+	fmt.Printf("Exported %d file(s) to %s\n", count, exportAria2Input)
+}
+
+func exportFolderAria2Input(p *api.PikPak, f *os.File, folderID, folderName string) int {
+	collectStat := make([]warpStat, 0)
+	recursiveCollect(p, &collectStat, folderID, folderName)
+
+	count := 0
+	for _, ws := range collectStat {
+		file, err := p.GetFile(ws.s.ID)
+		if err != nil {
+			fmt.Println("Get file failed:", ws.s.Name)
+			logx.Error(err)
+			continue
+		}
+		exportFileAria2Input(f, &file, ws.output)
+		count++
+	}
+	return count
+}
+
+func exportFileAria2Input(f *os.File, file *api.File, subDir string) {
+	downloadURL := getDownloadURL(file)
+	if downloadURL == "" {
+		fmt.Println("No download URL for:", file.Name)
+		return
+	}
+
+	fmt.Fprintf(f, "%s\n", downloadURL)
+	fmt.Fprintf(f, "  out=%s\n", file.Name)
+	if subDir != "" {
+		fmt.Fprintf(f, "  dir=%s\n", subDir)
+	}
+	fmt.Fprintf(f, "  header=User-Agent: %s\n", api.UserAgent)
+	fmt.Fprintf(f, "  max-connection-per-server=%d\n", conf.Config.Aria2.GetMaxConnections())
+	fmt.Fprintf(f, "  split=%d\n", conf.Config.Aria2.GetSplit())
+	fmt.Fprintf(f, "  min-split-size=%s\n", conf.Config.Aria2.GetMinSplitSize())
+	fmt.Fprintln(f)
+}
+
+// --- Built-in download mode ---
 
 func downloadTimeRangeTarget(p *api.PikPak, args []string) {
 	if len(args) != 1 {
@@ -156,6 +431,12 @@ func downloadTimeRangeTarget(p *api.PikPak, args []string) {
 	}
 	if stat.Kind == api.FileKindFolder {
 		fmt.Println("Time range download only supports file targets")
+		return
+	}
+
+	if err := utils.CreateDirIfNotExist(output); err != nil {
+		fmt.Println("Create output directory failed")
+		logx.Error(err)
 		return
 	}
 
@@ -307,8 +588,27 @@ func downloadTarget(p *api.PikPak, arg string) {
 
 func downloadFolder(p *api.PikPak, folderID string, rootOutput string) {
 	collectStat := make([]warpStat, 0)
-	recursive(p, &collectStat, folderID, rootOutput)
+	recursiveCollect(p, &collectStat, folderID, rootOutput)
 	downloadStats(p, collectStat)
+}
+
+func recursiveCollect(p *api.PikPak, collectWarpFile *[]warpStat, parentId string, parentPath string) {
+	statList, err := p.GetFolderFileStatList(parentId)
+	if err != nil {
+		fmt.Println("Get folder file stat list failed")
+		logx.Error(err)
+		return
+	}
+	for _, r := range statList {
+		if r.Kind == api.FileKindFolder {
+			recursiveCollect(p, collectWarpFile, r.ID, filepath.Join(parentPath, r.Name))
+		} else {
+			*collectWarpFile = append(*collectWarpFile, warpStat{
+				s:      r,
+				output: parentPath,
+			})
+		}
+	}
 }
 
 func downloadStats(p *api.PikPak, collectStat []warpStat) {
@@ -366,27 +666,6 @@ func downloadStats(p *api.PikPak, collectStat []warpStat) {
 	}
 	if pb != nil {
 		pb.Wait()
-	}
-}
-
-func recursive(p *api.PikPak, collectWarpFile *[]warpStat, parentId string, parentPath string) {
-	statList, err := p.GetFolderFileStatList(parentId)
-	if err != nil {
-		fmt.Println("Get folder file stat list failed")
-		logx.Error(err)
-		return
-	}
-	for _, r := range statList {
-		if r.Kind == api.FileKindFolder {
-			recursive(p, collectWarpFile, r.ID, filepath.Join(parentPath, r.Name))
-		} else {
-			// file, _ := p.GetFile(r.ID)
-			*collectWarpFile = append(*collectWarpFile, warpStat{
-				s:      r,
-				output: parentPath,
-			})
-			// fmt.Println(r.Name, r.Size, r.Kind, parentPath)
-		}
 	}
 }
 
@@ -512,32 +791,27 @@ func download(inCh <-chan warpFile, out chan<- struct{}, pb *mpb.Progress) {
 		path := filepath.Join(warp.output, warp.f.Name)
 		exist, err := utils.Exists(path)
 		if err != nil {
-			// logrus.Errorln("Access", path, "Failed:", err)
 			out <- struct{}{}
 			continue
 		}
-		flag := path + ".pikpakclidownload"
+		flag := path + ".pikpakidmdownload"
 		hasFlag, err := utils.Exists(flag)
 		if err != nil {
-			// logrus.Errorln("Access", flag, "Failed:", err)
 			out <- struct{}{}
 			continue
 		}
 		if exist && !hasFlag {
-			// logrus.Infoln("Skip downloaded file", warp.f.Name)
 			out <- struct{}{}
 			continue
 		}
 		err = utils.TouchFile(flag)
 		if err != nil {
-			// logrus.Errorln("Create flag file", flag, "Failed:", err)
 			out <- struct{}{}
 			continue
 		}
 
 		siz, err := strconv.ParseInt(warp.f.Size, 10, 64)
 		if err != nil {
-			// logrus.Errorln("Parse File size", warp.f.Size, "Failed:", err)
 			out <- struct{}{}
 			continue
 		}
@@ -562,9 +836,7 @@ func download(inCh <-chan warpFile, out chan<- struct{}, pb *mpb.Progress) {
 			)
 		}
 
-		// start downloading
 		err = warp.f.Download(path, bar)
-		// if hasn't error then remove flag file
 		if err == nil {
 			if pb == nil {
 				fmt.Println("Download", warp.f.Name, "Success")

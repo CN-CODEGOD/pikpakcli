@@ -4,19 +4,26 @@ proxy:
 username: xxx
 # PikPak account password
 password: xxx
-# Local open command settings used by the interactive shell builtin `open`
-open:
-# Local cache directory for files that need to be downloaded before opening
+# Aria2 download settings
+aria2:
+  # Aria2 JSON-RPC URL (default: http://127.0.0.1:6800/jsonrpc)
+  rpc_url: http://127.0.0.1:6800/jsonrpc
+  # Aria2 RPC secret token (leave empty if not configured)
+  secret:
+  # Maximum connections per file (default: 16)
+  max_connections: 16
+  # Number of parts to split download (default: 16)
+  split: 16
+  # Minimum split size (default: 1M)
+  min_split_size: 1M
+  # Download directory (default: current directory)
   download_dir:
-# Fallback command used when no file-type-specific command is configured
+# Local open command settings
+open:
+  download_dir:
   default: []
-# Command used to open text and source files
   text: []
-# Command used to open image files
   image: []
-# Command used to open video files
   video: []
-# Command used to open audio files
   audio: []
-# Command used to open PDF files
   pdf: []

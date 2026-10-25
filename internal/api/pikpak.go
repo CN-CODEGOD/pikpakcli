@@ -15,7 +15,7 @@ import (
 	jsoniter "github.com/json-iterator/go"
 )
 
-const userAgent = `ANDROID-com.pikcloud.pikpak/1.21.0`
+const UserAgent = `ANDROID-com.pikcloud.pikpak/1.21.0`
 const clientID = `YNxT9w7GMdWvEOKa`
 const clientSecret = `dbw2OtmVEeuUvIptb1Coyg`
 
@@ -184,7 +184,7 @@ func (p *PikPak) setHeader(req *http.Request) {
 	if p.JwtToken != "" {
 		req.Header.Set("Authorization", "Bearer "+p.JwtToken)
 	}
-	req.Header.Set("User-Agent", userAgent)
+	req.Header.Set("User-Agent", UserAgent)
 	req.Header.Set("X-Device-Id", p.DeviceId)
 }
 

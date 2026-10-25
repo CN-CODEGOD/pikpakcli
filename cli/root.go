@@ -23,13 +23,13 @@ import (
 )
 
 var rootCmd = &cobra.Command{
-	Use:   "pikpakcli",
-	Short: "Pikpakcli is a command line interface for Pikpak",
+	Use:   "pikpakidm",
+	Short: "PikPakIDM is a command line download manager for PikPak with aria2 support",
 	Run: func(cmd *cobra.Command, args []string) {
 		cmd.Help()
 	},
 	PersistentPreRun: func(cmd *cobra.Command, args []string) {
-		if cmd.CommandPath() == "pikpakcli setup" {
+		if cmd.CommandPath() == "pikpakidm setup" {
 			logx.Init(debug, debugTopics)
 			return
 		}
@@ -43,14 +43,10 @@ var rootCmd = &cobra.Command{
 	},
 }
 
-// Config path
 var configPath string
-
-// Debug mode
 var debug bool
 var debugTopics []string
 
-// Initialize the command line interface
 func init() {
 	rootCmd.PersistentFlags().BoolVar(&debug, "debug", false, "debug mode")
 	rootCmd.PersistentFlags().StringSliceVar(&debugTopics, "debug-topic", nil, "enable debug topics: api,session,transfer")
@@ -71,7 +67,6 @@ func init() {
 	rootCmd.AddCommand(shellCmd)
 }
 
-// Execute the command line interface
 func Execute() {
 	if err := rootCmd.Execute(); err != nil {
 		os.Exit(1)

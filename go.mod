@@ -2,6 +2,8 @@ module github.com/52funny/pikpakcli
 
 go 1.21.3
 
+toolchain go1.21.13
+
 require (
 	github.com/52funny/pikpakhash v0.0.0-20231104025731-ef91a56eff9c
 	github.com/chzyer/readline v1.5.1

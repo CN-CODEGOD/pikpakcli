@@ -237,7 +237,7 @@ func defaultRulesPath() (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("get config dir error: %w", err)
 	}
-	return filepath.Join(configDir, "pikpakcli", defaultRulesRelativePath), nil
+	return filepath.Join(configDir, "pikpakidm", defaultRulesRelativePath), nil
 }
 
 func ensureDefaultRulesFile(path string) error {

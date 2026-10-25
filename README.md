@@ -1,97 +1,18 @@
-# PikPak CLI
+# pikpakIDM
 
-![GitHub go.mod Go version](https://img.shields.io/github/go-mod/go-version/52funny/pikpakcli)
-![GitHub](https://img.shields.io/github/license/52funny/pikpakcli)
+default config file path :~/.config/pikpakidm/config.yaml
 
-English | [简体中文](https://github.com/52funny/pikpakcli/blob/master/README_zhCN.md)
-
-PikPakCli is a command line tool for Pikpak Cloud.
-
-![Build from source code.](./images/build.gif)
-
-## Installation
-
-### Compiling from source code
-
-To build the tool from the source code, ensure you have [Go](https://go.dev/doc/install) installed on your system.
-
-Clone the project:
-
-```bash
-git clone https://github.com/52funny/pikpakcli
-```
-
-Build the project:
-
-```bash
-go build
-```
-
-Run the tool:
-
-```
-./pikpakcli
-```
-
-### Build with Docker
-You can also run `pikpakcli` using Docker.
-Pull the Docker image:
-
-```bash
-docker pull 52funny/pikpakcli:master
-```
-
-Run the tool:
-```bash
-docker run --rm 52funny/pikpakcli:master --help
-```
-
-### Download from Release
-
-Download the executable file you need from the [Releases](https://github.com/52funny/pikpakcli/releases) page, then run it.
-
-## Configuration
-
-Run `setup` to create the default config file and enter your account details:
-
-```bash
-pikpakcli setup
-```
-
-If your account uses a phone number, it must be preceded by the country code, like `+861xxxxxxxxxx`.
-
-If the config file already exists, `setup` will refuse to overwrite it unless you pass `--force`.
-
-The configuration file will first be read from the current directory (`config.yml`). If it doesn't exist there, it will be read from the user's default configuration directory. The default root directories for each platform are:
-
-- Linux: `$HOME/.config/pikpakcli`
-- Darwin: `$HOME/Library/Application Support/pikpakcli`
-- Windows: `%AppData%/pikpakcli`
-
-The optional `open` section can override which local program is used by the interactive shell `open` builtin for different file categories.
-
-> **For Docker Users:** You need to mount the configuration file into the Docker container. For example, if your `config.yml` is located at `/path/to/your/config.yml`, you can run the Docker container like this:
-
-```bash
-docker run -v /path/to/your/config.yml:/root/.config/pikpakcli/config.yml pikpakcli:latest ls
-# if your config.yml is in the project directory, you can just run:
-docker run -v $PWD/config.yml:/root/.config/pikpakcli/config.yml pikpakcli:latest ls
-```
-
-## Get started
-
-After that you can run the `ls` command to see the files stored on **PikPak**.
-
-```bash
-./pikpakcli ls
-```
-
-## Usage
-
-See [Command](docs/command.md) for more commands information.
-
-## Contributors
-
-<a href = "https://github.com/52funny/pikpakcli/graphs/contributors">
-  <img src = "https://contrib.rocks/image?repo=52funny/pikpakcli"/>
-</a>
+aria2:
+  # Aria2 JSON-RPC URL (default: http://127.0.0.1:6800/jsonrpc)
+  rpc_url:
+  # Aria2 RPC secret token (leave empty if not configured)
+  secret:
+  # Maximum connections per file (default: 16)
+  max_connections: 16
+  # Number of parts to split download (default: 16)
+  split: 16
+  # Minimum split size (default: 1M)
+  min_split_size: 1M
+  # Download directory (default: current directory)
+  download_dir:
+# Local open command settings

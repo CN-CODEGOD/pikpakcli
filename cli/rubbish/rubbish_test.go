@@ -158,7 +158,7 @@ func TestDefaultRulesPathUsesConfigDir(t *testing.T) {
 	require.NoError(t, err)
 	path, err := defaultRulesPath()
 	require.NoError(t, err)
-	assert.Equal(t, filepath.Join(configDir, "pikpakcli", "rules", "rubbish_rules.txt"), path)
+	assert.Equal(t, filepath.Join(configDir, "pikpakidm", "rules", "rubbish_rules.txt"), path)
 }
 
 func TestResolveRulesPathForDirectory(t *testing.T) {

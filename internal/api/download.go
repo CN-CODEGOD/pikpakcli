@@ -102,7 +102,7 @@ func (f *File) download(path string, bar *mpb.Bar, expectedSize int64) error {
 	if err != nil {
 		return err
 	}
-	req.Header.Set("User-Agent", userAgent)
+	req.Header.Set("User-Agent", UserAgent)
 	if offset > 0 {
 		req.Header.Set("Range", fmt.Sprintf("bytes=%d-", offset))
 		if bar != nil {
